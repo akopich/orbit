@@ -202,6 +202,7 @@ add_subdirectory(src/Symbols)
 add_subdirectory(src/Statistics)
 add_subdirectory(src/Test)
 add_subdirectory(src/TestUtils)
+add_subdirectory(src/Waiter)
 
 if(WITH_GUI)
   add_subdirectory(src/CaptureFileInfo)
