@@ -7,15 +7,50 @@
 
 #include <absl/container/flat_hash_set.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <utility>
 
+#include "ClientData/CallstackData.h"
 #include "ClientData/CaptureData.h"
 #include "MizarData/MizarData.h"
 
 namespace orbit_mizar_data {
 
-struct MizarDataWithSampledFunctionId {
+class MizarDataWithSampledFunctionId {
+ public:
+  MizarDataWithSampledFunctionId(
+      const MizarData& data, absl::flat_hash_map<uint64_t, uint64_t> address_to_sampled_function_id)
+      : data(data), address_to_sampled_function_id(std::move(address_to_sampled_function_id)) {}
+
+  template <typename Action>
+  void ForEachCallstackEvent(uint32_t tid, uint64_t min_timestamp, uint64_t max_timestamp,
+                             Action&& action) const {
+    const orbit_client_data::CallstackData& callstack_data =
+        data.GetCaptureData().GetCallstackData();
+    auto action_of_callstack_events =
+        [this, &callstack_data, &action](const orbit_client_data::CallstackEvent& event) -> void {
+      const orbit_client_data::CallstackInfo* callstack =
+          callstack_data.GetCallstack(event.callstack_id());
+      const std::vector<uint64_t> sampled_function_ids = FramesWithIds(callstack);
+      std::forward(action)(sampled_function_ids);
+    };
+    if (tid == orbit_base::kAllProcessThreadsTid) {
+      callstack_data.ForEachCallstackEventInTimeRange(min_timestamp, max_timestamp,
+                                                      action_of_callstack_events);
+    } else {
+      callstack_data.ForEachCallstackEventOfTidInTimeRange(tid, min_timestamp, max_timestamp,
+                                                           action_of_callstack_events);
+    }
+  }
+
+ private:
+  [[nodiscard]] std::vector<uint64_t> FramesWithIds(
+      const orbit_client_data::CallstackInfo* callstack) const;
+
+  [[nodiscard]] std::vector<uint64_t> CallstackWithIds(const std::vector<uint64_t>& frames) const;
+
   const MizarData& data;
   absl::flat_hash_map<uint64_t, uint64_t> address_to_sampled_function_id;
 };
