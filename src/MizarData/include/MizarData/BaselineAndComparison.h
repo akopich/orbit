@@ -18,6 +18,7 @@
 
 namespace orbit_mizar_data {
 
+template <typename MizarData>
 class MizarDataWithSampledFunctionId {
  public:
   MizarDataWithSampledFunctionId(
@@ -34,7 +35,7 @@ class MizarDataWithSampledFunctionId {
       const orbit_client_data::CallstackInfo* callstack =
           callstack_data.GetCallstack(event.callstack_id());
       const std::vector<uint64_t> sampled_function_ids = FramesWithIds(callstack);
-      std::forward(action)(sampled_function_ids);
+      std::forward<Action>(action)(sampled_function_ids);
     };
     if (tid == orbit_base::kAllProcessThreadsTid) {
       callstack_data.ForEachCallstackEventInTimeRange(min_timestamp, max_timestamp,
@@ -47,9 +48,24 @@ class MizarDataWithSampledFunctionId {
 
  private:
   [[nodiscard]] std::vector<uint64_t> FramesWithIds(
-      const orbit_client_data::CallstackInfo* callstack) const;
+      const orbit_client_data::CallstackInfo* callstack) const {
+    if (callstack->frames().empty()) return {};
+    if (callstack->type() != orbit_client_data::CallstackType::kComplete) {
+      return CallstackWithIds({callstack->frames()[0]});
+    }
+    return CallstackWithIds(callstack->frames());
+  }
 
-  [[nodiscard]] std::vector<uint64_t> CallstackWithIds(const std::vector<uint64_t>& frames) const;
+  [[nodiscard]] std::vector<uint64_t> CallstackWithIds(const std::vector<uint64_t>& frames) const {
+    std::vector<uint64_t> result;
+    for (const uint64_t address : frames) {
+      if (auto it = address_to_sampled_function_id.find(address);
+          it != address_to_sampled_function_id.end()) {
+        result.push_back(it->second);
+      }
+    }
+    return result;
+  }
 
   const MizarData& data;
   absl::flat_hash_map<uint64_t, uint64_t> address_to_sampled_function_id;
@@ -57,8 +73,8 @@ class MizarDataWithSampledFunctionId {
 
 class BaselineAndComparison {
  public:
-  BaselineAndComparison(MizarDataWithSampledFunctionId baseline,
-                        MizarDataWithSampledFunctionId comparison,
+  BaselineAndComparison(MizarDataWithSampledFunctionId<MizarData> baseline,
+                        MizarDataWithSampledFunctionId<MizarData> comparison,
                         absl::flat_hash_map<uint64_t, std::string> sampled_function_id_to_name)
       : baseline_(std::move(baseline)),
         comparison_(std::move(comparison)),
@@ -70,8 +86,8 @@ class BaselineAndComparison {
   }
 
  private:
-  MizarDataWithSampledFunctionId baseline_;
-  MizarDataWithSampledFunctionId comparison_;
+  MizarDataWithSampledFunctionId<MizarData> baseline_;
+  MizarDataWithSampledFunctionId<MizarData> comparison_;
   absl::flat_hash_map<uint64_t, std::string> sampled_function_id_to_name_;
 };
 
