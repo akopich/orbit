@@ -87,13 +87,13 @@ const std::vector<uint64_t> kAnotherCompleteCallstackIds =
     IdsForCallstacks(kAnotherCompleteCallstack.frames());
 
 TEST(MizarDataWithSampledFunctionId, ForeachCallstackIsCorrect) {
-  MockCaptureData capture_data;
-  MockMizarData data;
+  auto capture_data = std::make_unique<MockCaptureData>();
+  auto data = std::make_unique<MockMizarData>();
 
-  EXPECT_CALL(capture_data, GetCallstackData).WillRepeatedly(testing::ReturnRef(*kCallstackData));
-  EXPECT_CALL(data, GetCaptureData).WillRepeatedly(testing::ReturnRef(capture_data));
+  EXPECT_CALL(*capture_data, GetCallstackData).WillRepeatedly(testing::ReturnRef(*kCallstackData));
+  EXPECT_CALL(*data, GetCaptureData).WillRepeatedly(testing::ReturnRef(*capture_data));
 
-  MizarDataWithSampledFunctionId<MockMizarData> mizar_data_with_sampled_function_id(data,
+  MizarDataWithSampledFunctionId<MockMizarData> mizar_data_with_sampled_function_id(std::move(data),
                                                                                     kAddressToId);
 
   ORBIT_LOG("%u", kCallstackData->GetCallstackEventsOfTidCount(kTID));

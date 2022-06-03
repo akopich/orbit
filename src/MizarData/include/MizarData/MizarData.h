@@ -25,12 +25,21 @@
 
 namespace orbit_mizar_data {
 
+// This class is used by Mizar to read a capture file and load the symbols.
+// Also owns a map from the function absolute addresses to their names.
 class MizarData : public orbit_capture_client::AbstractCaptureListener<MizarData>,
                   public MizarDataProvider {
  public:
+  MizarData() = default;
+  MizarData(MizarData&) = delete;
+  MizarData& operator=(const MizarData& other) = delete;
+
+  MizarData(MizarData&& other) = default;
+  MizarData& operator=(MizarData&& other) = delete;
+
   virtual ~MizarData() = default;
 
-  [[nodiscard]] absl::flat_hash_map<uint64_t, std::string> AllAddressToName() const;
+  [[nodiscard]] absl::flat_hash_map<uint64_t, std::string> AllAddressToName() const override;
 
   // virtual for testing purposes
   [[nodiscard]] virtual std::optional<std::string> GetFunctionNameFromAddress(

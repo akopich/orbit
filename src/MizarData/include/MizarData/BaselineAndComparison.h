@@ -18,18 +18,20 @@
 
 namespace orbit_mizar_data {
 
-template <typename MizarData>
+template <typename Data>
 class MizarDataWithSampledFunctionId {
  public:
   MizarDataWithSampledFunctionId(
-      const MizarData& data, absl::flat_hash_map<uint64_t, uint64_t> address_to_sampled_function_id)
-      : data(data), address_to_sampled_function_id(std::move(address_to_sampled_function_id)) {}
+      std::unique_ptr<Data> data,
+      absl::flat_hash_map<uint64_t, uint64_t> address_to_sampled_function_id)
+      : data_(std::move(data)),
+        address_to_sampled_function_id_(std::move(address_to_sampled_function_id)) {}
 
   template <typename Action>
   void ForEachCallstackEvent(uint32_t tid, uint64_t min_timestamp, uint64_t max_timestamp,
                              Action&& action) const {
     const orbit_client_data::CallstackData& callstack_data =
-        data.GetCaptureData().GetCallstackData();
+        data_->GetCaptureData().GetCallstackData();
     auto action_of_callstack_events =
         [this, &callstack_data, &action](const orbit_client_data::CallstackEvent& event) -> void {
       const orbit_client_data::CallstackInfo* callstack =
@@ -59,22 +61,25 @@ class MizarDataWithSampledFunctionId {
   [[nodiscard]] std::vector<uint64_t> CallstackWithIds(const std::vector<uint64_t>& frames) const {
     std::vector<uint64_t> result;
     for (const uint64_t address : frames) {
-      if (auto it = address_to_sampled_function_id.find(address);
-          it != address_to_sampled_function_id.end()) {
+      if (auto it = address_to_sampled_function_id_.find(address);
+          it != address_to_sampled_function_id_.end()) {
         result.push_back(it->second);
       }
     }
     return result;
   }
 
-  const MizarData& data;
-  absl::flat_hash_map<uint64_t, uint64_t> address_to_sampled_function_id;
+  std::unique_ptr<Data> data_;
+  absl::flat_hash_map<uint64_t, uint64_t> address_to_sampled_function_id_;
 };
 
+// The class owns the data from two capture files via owning two instances of
+// `MizarDataWithSampledFunctionId`. Also owns the map from sampled function ids to the
+// corresponding function names.
 class BaselineAndComparison {
  public:
-  BaselineAndComparison(MizarDataWithSampledFunctionId<MizarData> baseline,
-                        MizarDataWithSampledFunctionId<MizarData> comparison,
+  BaselineAndComparison(MizarDataWithSampledFunctionId<MizarDataProvider> baseline,
+                        MizarDataWithSampledFunctionId<MizarDataProvider> comparison,
                         absl::flat_hash_map<uint64_t, std::string> sampled_function_id_to_name)
       : baseline_(std::move(baseline)),
         comparison_(std::move(comparison)),
@@ -86,13 +91,13 @@ class BaselineAndComparison {
   }
 
  private:
-  MizarDataWithSampledFunctionId<MizarData> baseline_;
-  MizarDataWithSampledFunctionId<MizarData> comparison_;
+  MizarDataWithSampledFunctionId<MizarDataProvider> baseline_;
+  MizarDataWithSampledFunctionId<MizarDataProvider> comparison_;
   absl::flat_hash_map<uint64_t, std::string> sampled_function_id_to_name_;
 };
 
-orbit_mizar_data::BaselineAndComparison CreateBaselineAndComparison(const MizarData& baseline,
-                                                                    const MizarData& comparison);
+orbit_mizar_data::BaselineAndComparison CreateBaselineAndComparison(
+    std::unique_ptr<MizarDataProvider> baseline, std::unique_ptr<MizarDataProvider> comparison);
 
 }  // namespace orbit_mizar_data
 
