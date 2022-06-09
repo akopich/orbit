@@ -14,6 +14,7 @@
 #include "MizarData/MizarData.h"
 #include "MizarData/MizarPairedData.h"
 #include "MizarData/SampledFunctionId.h"
+#include "MizarData/SamplingWithFrameTrackComparisonReport.h"
 
 namespace orbit_mizar_data {
 
@@ -32,6 +33,10 @@ class BaselineAndComparison {
   [[nodiscard]] const absl::flat_hash_map<SFID, std::string>& sfid_to_name() const {
     return sfid_to_name_;
   }
+
+  [[nodiscard]] SamplingWithFrameTrackComparisonReport MakeSamplingWithFrameTrackReport(
+      BaselineSamplingWithFrameTrackReportConfig baseline_config,
+      ComparisonSamplingWithFrameTrackReportConfig comparison_config);
 
  private:
   MizarPairedData<MizarDataProvider> baseline_;
