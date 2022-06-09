@@ -60,9 +60,11 @@ struct SamplingCounts {
   }
 
   [[nodiscard]] double GetInclusiveRate(SFID sfid) const {
+    if (total_callstacks == 0) return 0;
     return static_cast<double>(GetInclusiveCnt(sfid)) / total_callstacks;
   }
   [[nodiscard]] double GetExclusiveRate(SFID sfid) const {
+    if (total_callstacks == 0) return 0;
     return static_cast<double>(GetExclusiveCnt(sfid)) / total_callstacks;
   }
 

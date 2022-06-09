@@ -17,6 +17,7 @@
 
 #include "BaselineAndComparisonHelper.h"
 #include "MizarData/BaselineAndComparison.h"
+#include "OrbitBase/ThreadConstants.h"
 
 namespace orbit_mizar_data {
 
@@ -77,15 +78,6 @@ template <typename K, typename V>
   return values;
 }
 
-namespace {
-class MockPairedData {
-  MOCK_METHOD(void, ForEachCallstackEvent,
-              (uint32_t tid, uint64_t min_timestamp, uint64_t max_timestamp,
-               std::function<void(const std::vector<SFID>&)>),
-              (const));
-};
-}  // namespace
-
 TEST(BaselineAndComparisonTest, BaselineAndComparisonHelperIsCorrect) {
   const auto [baseline_address_to_sfid, comparison_address_to_sfid, sfid_to_name] =
       AssignSampledFunctionIds(kBaselineAddressToName, kComparisonAddressToName);
@@ -101,15 +93,53 @@ TEST(BaselineAndComparisonTest, BaselineAndComparisonHelperIsCorrect) {
               testing::UnorderedElementsAreArray(Values(comparison_address_to_sfid)));
 }
 
-constexpr kCallstacksNum = 3;
-const std::array<std::vector<SFID>, kCallstacksNum> kCallstacks = {{}, {}, {}};
+constexpr SFID kSFIDFirst = SFID(1);
+constexpr SFID kSFIDSecond = SFID(2);
+constexpr SFID kSFIDThird = SFID(3);
 
-TEST(BaselineAndComparisonTest, MakeCountsIsCorrect) {
-  MockPairedData full;
-  EXPECT_CALL(full, ForEachCallstackEvent).WillRepeatedly(testing::Invoke([]() {}));
+const std::vector<std::vector<SFID>> kCallstacks = {
+    std::vector<SFID>{kSFIDFirst, kSFIDSecond, kSFIDThird}, {kSFIDSecond}, {}};
 
-  MockPairedData empty;
-  BaselineAndComparisonTmpl<MockPairedData> bac();
+namespace {
+class MockPairedData {
+ public:
+  explicit MockPairedData(std::vector<std::vector<SFID>> callstacks)
+      : callstacks_(std::move(callstacks)) {}
+
+  void ForEachCallstackEvent(uint32_t /*tid*/, uint64_t /*min_timestamp*/,
+                             uint64_t /*max_timestamp*/,
+                             std::function<void(const std::vector<SFID>&)> action) const {
+    ORBIT_LOG(" ENTER");
+
+    for (const auto& callstack : callstacks_) {
+      ORBIT_LOG(" LOOP");
+      action(callstack);
+    }
+  }
+
+ private:
+  std::vector<std::vector<SFID>> callstacks_;
+};
+}  // namespace
+
+TEST(BaselineAndComparisonTest, MakeSamplingWithFrameTrackReportIsCorrect) {
+  MockPairedData full(kCallstacks);
+  MockPairedData empty({});
+
+  BaselineAndComparisonTmpl<MockPairedData> bac(full, empty, {});
+  SamplingWithFrameTrackComparisonReport report = bac.MakeSamplingWithFrameTrackReport(
+      BaselineSamplingWithFrameTrackReportConfig{{orbit_base::kAllProcessThreadsTid}, 0, 1},
+      ComparisonSamplingWithFrameTrackReportConfig{{orbit_base::kAllProcessThreadsTid}, 0, 1});
+
+  EXPECT_EQ(report.baseline_sampling_counts.total_callstacks, kCallstacks.size());
+  
+  EXPECT_EQ(report.baseline_sampling_counts.GetExclusiveCnt(kSFIDFirst), 0);
+  EXPECT_EQ(report.baseline_sampling_counts.GetExclusiveCnt(kSFIDSecond), 1);
+  EXPECT_EQ(report.baseline_sampling_counts.GetExclusiveCnt(kSFIDThird), 1);
+
+  EXPECT_EQ(report.baseline_sampling_counts.GetInclusiveCnt(kSFIDFirst), 1);
+  EXPECT_EQ(report.baseline_sampling_counts.GetInclusiveCnt(kSFIDSecond), 2);
+  EXPECT_EQ(report.baseline_sampling_counts.GetInclusiveCnt(kSFIDThird), 1);
 }
 
 }  // namespace orbit_mizar_data

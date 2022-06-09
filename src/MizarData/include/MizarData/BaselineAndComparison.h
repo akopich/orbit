@@ -24,8 +24,7 @@ namespace orbit_mizar_data {
 template <typename PairedData>
 class BaselineAndComparisonTmpl {
  public:
-  BaselineAndComparisonTmpl(MizarPairedData<MizarDataProvider> baseline,
-                            MizarPairedData<MizarDataProvider> comparison,
+  BaselineAndComparisonTmpl(PairedData baseline, PairedData comparison,
                             absl::flat_hash_map<SFID, std::string> sfid_to_name)
       : baseline_(std::move(baseline)),
         comparison_(std::move(comparison)),
