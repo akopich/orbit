@@ -28,29 +28,4 @@ orbit_mizar_data::BaselineAndComparison CreateBaselineAndComparison(
           std::move(sfid_to_name)};
 }
 
-[[nodiscard]] static SamplingCounts MakeCounts(
-    const MizarPairedData<MizarDataProvider>& data,
-    const HalfOfSamplingWithFrameTrackReportConfig& config) {
-  SamplingCounts result;
-  for (const uint32_t tid : config.tids) {
-    data.ForEachCallstackEvent(tid, config.start_ns, config.end_ns,
-                               [&result](const std::vector<SFID>& callstack) {
-                                 result.total_callstacks++;
-                                 if (callstack.empty()) return;
-                                 for (const SFID sfid : callstack) {
-                                   result.counts[sfid].inclusive++;
-                                 }
-                                 result.counts[callstack.back()].exclusive++;
-                               });
-  }
-  return result;
-}
-
-[[nodiscard]] SamplingWithFrameTrackComparisonReport
-BaselineAndComparison::MakeSamplingWithFrameTrackReport(
-    BaselineSamplingWithFrameTrackReportConfig baseline_config,
-    ComparisonSamplingWithFrameTrackReportConfig comparison_config) {
-  return {MakeCounts(baseline_, baseline_config), MakeCounts(comparison_, comparison_config)};
-}
-
 }  // namespace orbit_mizar_data

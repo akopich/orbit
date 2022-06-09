@@ -4,10 +4,12 @@
 
 #include <absl/container/flat_hash_map.h>
 #include <gmock/gmock-matchers.h>
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <functional>
 #include <iterator>
 #include <string>
 #include <utility>
@@ -75,6 +77,15 @@ template <typename K, typename V>
   return values;
 }
 
+namespace {
+class MockPairedData {
+  MOCK_METHOD(void, ForEachCallstackEvent,
+              (uint32_t tid, uint64_t min_timestamp, uint64_t max_timestamp,
+               std::function<void(const std::vector<SFID>&)>),
+              (const));
+};
+}  // namespace
+
 TEST(BaselineAndComparisonTest, BaselineAndComparisonHelperIsCorrect) {
   const auto [baseline_address_to_sfid, comparison_address_to_sfid, sfid_to_name] =
       AssignSampledFunctionIds(kBaselineAddressToName, kComparisonAddressToName);
@@ -88,6 +99,17 @@ TEST(BaselineAndComparisonTest, BaselineAndComparisonHelperIsCorrect) {
 
   EXPECT_THAT(Values(baseline_address_to_sfid),
               testing::UnorderedElementsAreArray(Values(comparison_address_to_sfid)));
+}
+
+constexpr kCallstacksNum = 3;
+const std::array<std::vector<SFID>, kCallstacksNum> kCallstacks = {{}, {}, {}};
+
+TEST(BaselineAndComparisonTest, MakeCountsIsCorrect) {
+  MockPairedData full;
+  EXPECT_CALL(full, ForEachCallstackEvent).WillRepeatedly(testing::Invoke([]() {}));
+
+  MockPairedData empty;
+  BaselineAndComparisonTmpl<MockPairedData> bac();
 }
 
 }  // namespace orbit_mizar_data
