@@ -43,19 +43,20 @@ class BaselineAndComparisonTmpl {
  private:
   [[nodiscard]] SamplingCounts MakeCounts(const PairedData& data,
                                           const HalfOfSamplingWithFrameTrackReportConfig& config) {
-    SamplingCounts result;
+    uint64_t total_callstacks = 0;
+    absl::flat_hash_map<SFID, InclusiveAndExclusive> counts;
     for (const uint32_t tid : config.tids) {
       data.ForEachCallstackEvent(tid, config.start_ns, config.end_ns,
-                                 [&result](const std::vector<SFID>& callstack) {
-                                   result.total_callstacks++;
+                                 [&total_callstacks, &counts](const std::vector<SFID>& callstack) {
+                                   total_callstacks++;
                                    if (callstack.empty()) return;
                                    for (const SFID sfid : callstack) {
-                                     result.counts[sfid].inclusive++;
+                                     counts[sfid].inclusive++;
                                    }
-                                   result.counts[callstack.back()].exclusive++;
+                                   counts[callstack.back()].exclusive++;
                                  });
     }
-    return result;
+    return SamplingCounts(std::move(counts), total_callstacks);
   }
 
   PairedData baseline_;

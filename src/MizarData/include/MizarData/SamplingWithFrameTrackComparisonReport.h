@@ -49,27 +49,35 @@ struct InclusiveAndExclusive {
   uint64_t exclusive{};
 };
 
-struct SamplingCounts {
+class SamplingCounts {
+ public:
+  explicit SamplingCounts(absl::flat_hash_map<SFID, InclusiveAndExclusive> counts,
+                          uint64_t total_callstacks)
+      : counts_(std::move(counts)), total_callstacks_(total_callstacks) {}
+
   [[nodiscard]] uint64_t GetInclusiveCnt(SFID sfid) const {
-    if (const auto it = counts.find(sfid); it != counts.end()) return it->second.inclusive;
+    if (const auto it = counts_.find(sfid); it != counts_.end()) return it->second.inclusive;
     return 0;
   }
   [[nodiscard]] uint64_t GetExclusiveCnt(SFID sfid) const {
-    if (const auto it = counts.find(sfid); it != counts.end()) return it->second.exclusive;
+    if (const auto it = counts_.find(sfid); it != counts_.end()) return it->second.exclusive;
     return 0;
   }
 
   [[nodiscard]] double GetInclusiveRate(SFID sfid) const {
-    if (total_callstacks == 0) return 0;
-    return static_cast<double>(GetInclusiveCnt(sfid)) / total_callstacks;
+    if (total_callstacks_ == 0) return 0;
+    return static_cast<double>(GetInclusiveCnt(sfid)) / GetTotalCallstacks();
   }
   [[nodiscard]] double GetExclusiveRate(SFID sfid) const {
-    if (total_callstacks == 0) return 0;
-    return static_cast<double>(GetExclusiveCnt(sfid)) / total_callstacks;
+    if (total_callstacks_ == 0) return 0;
+    return static_cast<double>(GetExclusiveCnt(sfid)) / GetTotalCallstacks();
   }
 
-  absl::flat_hash_map<SFID, InclusiveAndExclusive> counts;
-  uint64_t total_callstacks{};
+  [[nodiscard]] uint64_t GetTotalCallstacks() const { return total_callstacks_; }
+
+ private:
+  absl::flat_hash_map<SFID, InclusiveAndExclusive> counts_;
+  uint64_t total_callstacks_{};
 };
 
 struct SamplingWithFrameTrackComparisonReport {

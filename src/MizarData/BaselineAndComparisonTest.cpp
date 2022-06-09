@@ -93,9 +93,11 @@ TEST(BaselineAndComparisonTest, BaselineAndComparisonHelperIsCorrect) {
               testing::UnorderedElementsAreArray(Values(comparison_address_to_sfid)));
 }
 
+constexpr size_t kSFIDCnt = 3;
 constexpr SFID kSFIDFirst = SFID(1);
 constexpr SFID kSFIDSecond = SFID(2);
 constexpr SFID kSFIDThird = SFID(3);
+const std::array<SFID, kSFIDCnt> kSFIDs = {kSFIDFirst, kSFIDSecond, kSFIDThird};
 
 const std::vector<std::vector<SFID>> kCallstacks = {
     std::vector<SFID>{kSFIDFirst, kSFIDSecond, kSFIDThird}, {kSFIDSecond}, {}};
@@ -109,12 +111,7 @@ class MockPairedData {
   void ForEachCallstackEvent(uint32_t /*tid*/, uint64_t /*min_timestamp*/,
                              uint64_t /*max_timestamp*/,
                              std::function<void(const std::vector<SFID>&)> action) const {
-    ORBIT_LOG(" ENTER");
-
-    for (const auto& callstack : callstacks_) {
-      ORBIT_LOG(" LOOP");
-      action(callstack);
-    }
+    std::for_each(std::begin(callstacks_), std::end(callstacks_), std::move(action));
   }
 
  private:
@@ -131,8 +128,8 @@ TEST(BaselineAndComparisonTest, MakeSamplingWithFrameTrackReportIsCorrect) {
       BaselineSamplingWithFrameTrackReportConfig{{orbit_base::kAllProcessThreadsTid}, 0, 1},
       ComparisonSamplingWithFrameTrackReportConfig{{orbit_base::kAllProcessThreadsTid}, 0, 1});
 
-  EXPECT_EQ(report.baseline_sampling_counts.total_callstacks, kCallstacks.size());
-  
+  EXPECT_EQ(report.baseline_sampling_counts.GetTotalCallstacks(), kCallstacks.size());
+
   EXPECT_EQ(report.baseline_sampling_counts.GetExclusiveCnt(kSFIDFirst), 0);
   EXPECT_EQ(report.baseline_sampling_counts.GetExclusiveCnt(kSFIDSecond), 1);
   EXPECT_EQ(report.baseline_sampling_counts.GetExclusiveCnt(kSFIDThird), 1);
@@ -140,6 +137,12 @@ TEST(BaselineAndComparisonTest, MakeSamplingWithFrameTrackReportIsCorrect) {
   EXPECT_EQ(report.baseline_sampling_counts.GetInclusiveCnt(kSFIDFirst), 1);
   EXPECT_EQ(report.baseline_sampling_counts.GetInclusiveCnt(kSFIDSecond), 2);
   EXPECT_EQ(report.baseline_sampling_counts.GetInclusiveCnt(kSFIDThird), 1);
+
+  EXPECT_EQ(report.comparison_sampling_counts.GetTotalCallstacks(), 0);
+  for (const SFID sfid : kSFIDs) {
+    EXPECT_EQ(report.comparison_sampling_counts.GetExclusiveCnt(sfid), 0);
+    EXPECT_EQ(report.comparison_sampling_counts.GetInclusiveCnt(sfid), 0);
+  }
 }
 
 }  // namespace orbit_mizar_data

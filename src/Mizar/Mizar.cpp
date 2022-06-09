@@ -64,17 +64,13 @@ int main(int argc, char* argv[]) {
               {orbit_base::kAllProcessThreadsTid}, start, end});
 
   for (const auto& [sfid, name] : bac.sfid_to_name()) {
-    if (report.baseline_sampling_counts.GetExclusiveCnt(sfid) +
-            report.comparison_sampling_counts.GetExclusiveCnt(sfid) >
-        0)
-      ORBIT_LOG("%s %.2f %.2f", static_cast<std::string>(sfid),
-                report.baseline_sampling_counts.GetExclusiveCnt(sfid),
-                report.comparison_sampling_counts.GetExclusiveCnt(sfid));
+    uint64_t baseline_cnt = report.baseline_sampling_counts.GetExclusiveCnt(sfid);
+    uint64_t comparison_cnt = report.baseline_sampling_counts.GetExclusiveCnt(sfid);
+    if (baseline_cnt > 0 || comparison_cnt > 0) {
+      ORBIT_LOG("%s %.2f %.2f", static_cast<std::string>(sfid), baseline_cnt, comparison_cnt);
+    }
   }
   ORBIT_LOG("Total number of common names %u  ", bac.sfid_to_name().size());
-
-  ORBIT_LOG("%u", report.baseline_sampling_counts.counts.size());
-  ORBIT_LOG("%u", report.comparison_sampling_counts.counts.size());
 
   return 0;
 }
