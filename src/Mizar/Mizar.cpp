@@ -11,6 +11,7 @@
 #include "CaptureClient/LoadCapture.h"
 #include "CaptureFile/CaptureFile.h"
 #include "MizarData/BaselineAndComparison.h"
+#include "MizarData/BaselineOrComparison.h"
 #include "MizarData/MizarData.h"
 #include "MizarData/SamplingWithFrameTrackComparisonReport.h"
 #include "OrbitBase/Logging.h"
@@ -69,8 +70,10 @@ int main(int argc, char* argv[]) {
               1));
 
   for (const auto& [sfid, name] : bac.sfid_to_name()) {
-    const uint64_t baseline_cnt = report.baseline_sampling_counts.GetExclusiveCount(sfid);
-    const uint64_t comparison_cnt = report.baseline_sampling_counts.GetExclusiveCount(sfid);
+    const uint64_t baseline_cnt =
+        report.GetSamplingCounts<orbit_mizar_data::Baseline>()->GetExclusiveCount(sfid);
+    const uint64_t comparison_cnt =
+        report.GetSamplingCounts<orbit_mizar_data::Comparison>()->GetExclusiveCount(sfid);
     if (baseline_cnt > 0 || comparison_cnt > 0) {
       ORBIT_LOG("%s %s %.2f %.2f", name, static_cast<std::string>(sfid), baseline_cnt,
                 comparison_cnt);
@@ -78,10 +81,10 @@ int main(int argc, char* argv[]) {
   }
   ORBIT_LOG("Total number of common names %u  ", bac.sfid_to_name().size());
   ORBIT_LOG("Baseline mean frametime %u ns, stddev %u",
-            report.baseline_frame_track_stats.ComputeAverageTimeNs(),
-            report.baseline_frame_track_stats.ComputeStdDevNs());
+            report.GetFrameTrackStats<orbit_mizar_data::Baseline>()->ComputeAverageTimeNs(),
+            report.GetFrameTrackStats<orbit_mizar_data::Baseline>()->ComputeStdDevNs());
   ORBIT_LOG("Comparison mean frametime %u ns, stddev %u",
-            report.comparison_frame_track_stats.ComputeAverageTimeNs(),
-            report.comparison_frame_track_stats.ComputeStdDevNs());
+            report.GetFrameTrackStats<orbit_mizar_data::Comparison>()->ComputeAverageTimeNs(),
+            report.GetFrameTrackStats<orbit_mizar_data::Comparison>()->ComputeStdDevNs());
   return 0;
 }
