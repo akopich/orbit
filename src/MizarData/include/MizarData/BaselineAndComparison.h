@@ -92,12 +92,14 @@ class BaselineAndComparisonTmpl {
           [&total_callstacks, &counts](const std::vector<SFID>& callstack) {
             total_callstacks++;
             if (callstack.empty()) return;
+
             for (const SFID sfid : callstack) {
               counts[sfid].inclusive++;
             }
-            counts[callstack.back()].exclusive++;
+            counts[callstack.front()].exclusive++;
           });
     }
+
     return Wrapper<SamplingCounts>(SamplingCounts(std::move(counts), total_callstacks));
   }
 

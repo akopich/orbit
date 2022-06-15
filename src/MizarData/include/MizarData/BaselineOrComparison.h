@@ -21,10 +21,17 @@ class BaselineOrComparison {
   const T* operator->() const { return &value_; }
   T* operator->() { return &value_; }
 
+  const T& operator*() const { return value_; }
+  T& operator*() { return value_; }
+
  protected:
   template <typename U, typename = EnableIfUConvertibleToT<T, U>>
   explicit BaselineOrComparison(U&& value) : value_(std::forward<T>(value)) {}
   BaselineOrComparison(BaselineOrComparison&& other) = default;
+
+  template <typename... Args>
+  explicit BaselineOrComparison(std::in_place_t /*_*/, Args&&... args)
+      : value_(T(std::forward<T>(args)...)) {}
 
  private:
   T value_;
@@ -35,6 +42,10 @@ class Baseline : public BaselineOrComparison<T> {
  public:
   template <typename U, typename = EnableIfUConvertibleToT<T, U>>
   explicit Baseline(U&& value) : BaselineOrComparison<T>(std::forward<U>(value)) {}
+
+  template <typename... Args>
+  explicit Baseline(std::in_place_t in_place, Args&&... args)
+      : BaselineOrComparison<T>(in_place, std::forward<T>(args)...) {}
 };
 
 template <typename T>
@@ -42,6 +53,10 @@ class Comparison : public BaselineOrComparison<T> {
  public:
   template <typename U, typename = EnableIfUConvertibleToT<T, U>>
   explicit Comparison(U&& value) : BaselineOrComparison<T>(std::forward<U>(value)) {}
+
+  template <typename... Args>
+  explicit Comparison(std::in_place_t in_place, Args&&... args)
+      : BaselineOrComparison<T>(in_place, std::forward<T>(args)...) {}
 };
 
 template <typename T, typename... Args>

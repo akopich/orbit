@@ -5,6 +5,8 @@
 #ifndef MIZAR_STATISTICS_ACTIVE_FUNCTION_TIME_PER_FRAME_COMPARISON
 #define MIZAR_STATISTICS_ACTIVE_FUNCTION_TIME_PER_FRAME_COMPARISON
 
+#include <utility>
+
 #include "ClientData/ScopeStats.h"
 #include "MizarData/BaselineOrComparison.h"
 #include "MizarData/SamplingWithFrameTrackComparisonReport.h"
@@ -13,54 +15,67 @@
 
 namespace orbit_mizar_data {
 
-class ActiveFunctionTimePerFrameComparator {
+template <typename Counts, typename FrameTrackStats>
+class ActiveFunctionTimePerFrameComparatorTmpl {
  public:
-  explicit ActiveFunctionTimePerFrameComparator(
-      const Baseline<SamplingCounts>& baseline_counts,
-      const Baseline<orbit_client_data::ScopeStats>& baseline_frame_stats,
-      const Comparison<SamplingCounts>& comparison_counts,
-      const Comparison<orbit_client_data::ScopeStats>& comparison_frame_stats)
+  explicit ActiveFunctionTimePerFrameComparatorTmpl(
+      const Baseline<Counts>& baseline_counts,
+      const Baseline<FrameTrackStats>& baseline_frame_stats,
+      const Comparison<Counts>& comparison_counts,
+      const Comparison<FrameTrackStats>& comparison_frame_stats)
       : baseline_counts_(baseline_counts),
         baseline_frame_stats_(baseline_frame_stats),
         comparison_counts_(comparison_counts),
         comparison_frame_stats_(comparison_frame_stats) {}
 
   [[nodiscard]] ComparisonResult Compare(SFID sfid) const {
-    const uint64_t n1 = baseline_counts_->GetTotalCallstacks();
-    const uint64_t n2 = comparison_counts_->GetTotalCallstacks();
-    const double p1 = baseline_counts_->GetExclusiveRate(sfid);
-    const double p2 = comparison_counts_->GetExclusiveRate(sfid);
-
-    const double f1 = baseline_frame_stats_->ComputeAverageTimeNs();
-    const double f2 = comparison_frame_stats_->ComputeAverageTimeNs();
-
-    const double var_p1 = p1 * (1 - p1) / n1;
-    const double var_p2 = p2 * (1 - p2) / n2;
-    const double var_f1 = baseline_frame_stats_->variance_ns();
-    const double var_f2 = comparison_frame_stats_->variance_ns();
-
-    const orbit_statistics::MeanAndVariance f1p1 =
-        orbit_statistics::ProductOfTwoIndependent({p1, var_p1}, {f1, var_f1});
-    const orbit_statistics::MeanAndVariance f2p2 =
-        orbit_statistics::ProductOfTwoIndependent({p2, var_p2}, {f2, var_f2});
-
+    const auto baseline_active_time =
+        ActiveFunctionTime(baseline_counts_, baseline_frame_stats_, sfid);
+    const auto comparison_active_time =
+        ActiveFunctionTime(comparison_counts_, comparison_frame_stats_, sfid);
     const orbit_statistics::MeanAndVariance non_normalized_stat =
-        orbit_statistics::ProductOfTwoIndependent(f1p1, f2p2);
+        NonNormalizedStat(baseline_active_time, comparison_active_time);
+
     const double stat = non_normalized_stat.mean / std::sqrt(non_normalized_stat.variance);
 
-    const double pvalue = orbit_statistics::GaussianCDF(stat);
-    if (std::isnan(pvalue)) return {stat, 1.0};
+    const double pvalue_right_tail = orbit_statistics::GaussianCDF(stat);
+    if (std::isnan(pvalue_right_tail)) return {stat, 1.0};
 
-    return {stat, std::min(pvalue, 1 - pvalue) * 2};
+    // But the test is two-tailed. So by the symmetry of Normal distribution we have
+    const double pvalue = std::min(pvalue_right_tail, 1 - pvalue_right_tail) * 2;
+    return {stat, pvalue};
   }
 
  private:
-  [[maybe_unused]] const Baseline<SamplingCounts>& baseline_counts_;
-  [[maybe_unused]] const Baseline<orbit_client_data::ScopeStats>& baseline_frame_stats_;
+  [[nodiscard]] static orbit_statistics::MeanAndVariance NonNormalizedStat(
+      const Baseline<orbit_statistics::MeanAndVariance>& baseline_active_time,
+      const Comparison<orbit_statistics::MeanAndVariance>& comparison_active_time) {
+    return orbit_statistics::DiffOfTwoIndependent(*baseline_active_time, *comparison_active_time);
+  }
 
-  [[maybe_unused]] const Comparison<SamplingCounts>& comparison_counts_;
-  [[maybe_unused]] const Comparison<orbit_client_data::ScopeStats>& comparison_frame_stats_;
+  template <template <class> class Wrapper>
+  [[nodiscard]] static Wrapper<orbit_statistics::MeanAndVariance> ActiveFunctionTime(
+      const Wrapper<Counts>& counts, const Wrapper<FrameTrackStats>& frame_track_stats, SFID sfid) {
+    const double rate = counts->GetExclusiveRate(sfid);
+    const double frametime = frame_track_stats->ComputeAverageTimeNs();
+
+    const double rate_var = rate * (1 - rate) / counts->GetTotalCallstacks();
+    const double frametime_var =
+        frame_track_stats->variance_ns() / std::sqrt(frame_track_stats->count());
+
+    return Wrapper<orbit_statistics::MeanAndVariance>(
+        orbit_statistics::ProductOfTwoIndependent({rate, rate_var}, {frametime, frametime_var}));
+  }
+
+  const Baseline<Counts>& baseline_counts_;
+  const Baseline<FrameTrackStats>& baseline_frame_stats_;
+
+  const Comparison<Counts>& comparison_counts_;
+  const Comparison<FrameTrackStats>& comparison_frame_stats_;
 };
+
+using ActiveFunctionTimePerFrameComparator =
+    ActiveFunctionTimePerFrameComparatorTmpl<SamplingCounts, orbit_client_data::ScopeStats>;
 
 }  // namespace orbit_mizar_data
 

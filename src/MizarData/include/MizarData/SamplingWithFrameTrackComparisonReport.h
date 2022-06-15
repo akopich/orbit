@@ -22,7 +22,8 @@ namespace orbit_mizar_data {
 // confusion with Unit tests.
 struct ComparisonResult {
   double statistic{};
-  double pvalue{};
+  double pvalue{};  // The term from Statistics. TL;DR: The smaller it is, the less we believe in
+                    // the assumption under test (e.g. no difference in active function time).
 };
 
 // The struct represents the part of configuration relevant to one of the two captures under
@@ -110,7 +111,10 @@ class SamplingWithFrameTrackComparisonReport {
       return comparison_frame_track_stats_;
     }
   }
-  
+
+  [[nodiscard]] const ComparisonResult& GetComparisonResult(SFID sfid) const {
+    return fid_to_comparison_results_.at(sfid);
+  }
 
  private:
   Baseline<SamplingCounts> baseline_sampling_counts_;
