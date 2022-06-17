@@ -6,6 +6,8 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <iterator>
 #include <vector>
 
 #include "Statistics/MultiplicityCorrection.h"
@@ -33,13 +35,33 @@ constexpr std::array<int, kTestsNum> kKeys = {1, 2, 3, 4};
 constexpr std::array<double, kTestsNum> kPvalues = {0.1, 0.2, 0.3, 0.02};
 const absl::flat_hash_map<int, double> kKeyToPvalue = MakeMap(kKeys, kPvalues);
 
-TEST(MultiplicityCorrection, BonferroniCorrectionIsCorrect) {
-  auto key_to_corrected = BonferroniCorrection(kKeyToPvalue);
-  EXPECT_THAT(key_to_corrected, SizeIs(kTestsNum));
+static void ExpectCorrectionIsCorrect(const absl::flat_hash_map<int, double>& actual,
+                                      const absl::flat_hash_map<int, double>& expected) {
+  EXPECT_THAT(actual, SizeIs(kTestsNum));
   for (const int key : kKeys) {
     constexpr double kTol = 1e-3;
-    EXPECT_THAT(key_to_corrected.at(key) / kTestsNum, DoubleNear(kKeyToPvalue.at(key), kTol));
+    EXPECT_THAT(actual.at(key), DoubleNear(expected.at(key), kTol));
   }
+}
+
+TEST(MultiplicityCorrection, BonferroniCorrectionIsCorrect) {
+  std::array<double, kTestsNum> expected_pvalues{};
+  std::transform(std::begin(kPvalues), std::end(kPvalues), std::begin(expected_pvalues),
+                 [](const double pvalue) { return pvalue * kTestsNum; });
+  const absl::flat_hash_map<int, double> kExpectedKeyToCorrectedPvalue =
+      MakeMap(kKeys, expected_pvalues);
+
+  auto actual = BonferroniCorrection(kKeyToPvalue);
+  ExpectCorrectionIsCorrect(actual, kExpectedKeyToCorrectedPvalue);
+}
+
+TEST(MultiplicityCorrection, HolmBonferroniCorrectionIsCorrect) {
+  constexpr std::array<double, kTestsNum> kKeyToCorrectedPvalue = {0.30, 0.40, 0.40, 0.08};
+  const absl::flat_hash_map<int, double> kExpectedKeyToCorrectedPvalue =
+      MakeMap(kKeys, kKeyToCorrectedPvalue);
+
+  auto actual = HolmBonferroniCorrection(kKeyToPvalue);
+  ExpectCorrectionIsCorrect(actual, kExpectedKeyToCorrectedPvalue);
 }
 
 }  // namespace orbit_statistics
