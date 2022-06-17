@@ -16,13 +16,14 @@
 #include "MizarData/NonWrappingAddition.h"
 #include "MizarData/SampledFunctionId.h"
 #include "MizarData/SamplingWithFrameTrackComparisonReport.h"
+#include "Statistics/MultiplicityCorrection.h"
 
 namespace orbit_mizar_data {
 
 // The class owns the data from two capture files via owning two instances of
 // `PairedData`. Also owns the map from sampled function ids to the
 // corresponding function names.
-template <typename PairedData, typename FunctionTimeComparator>
+template <typename PairedData, typename FunctionTimeComparator, auto MultiplicityCorrection>
 class BaselineAndComparisonTmpl {
  public:
   BaselineAndComparisonTmpl(Baseline<PairedData> baseline, Comparison<PairedData> comparison,
@@ -51,14 +52,25 @@ class BaselineAndComparisonTmpl {
                                       comparison_sampling_counts, comparison_frame_stats);
 
     absl::flat_hash_map<SFID, ComparisonResult> sfid_to_comparison_result;
+    absl::flat_hash_map<SFID, double> sfid_to_pvalue;
     for (const auto& [sfid, _] : sfid_to_name_) {
-      sfid_to_comparison_result.try_emplace(sfid, comparator.Compare(sfid));
+      ComparisonResult result = comparator.Compare(sfid);
+      sfid_to_comparison_result.try_emplace(sfid, result);
+      sfid_to_pvalue.try_emplace(sfid, result.pvalue);
+    }
+
+    const absl::flat_hash_map<SFID, double> sfid_to_corrected_pvalue =
+        MultiplicityCorrection(sfid_to_pvalue);
+    absl::flat_hash_map<SFID, CorrectedComparisonResult> sfid_to_corrected_comparison_result;
+    for (const auto& [sfid, result] : sfid_to_comparison_result) {
+      sfid_to_corrected_comparison_result.emplace(
+          sfid, CorrectedComparisonResult(result, sfid_to_corrected_pvalue.at(sfid)));
     }
 
     return SamplingWithFrameTrackComparisonReport(
         std::move(baseline_sampling_counts), std::move(baseline_frame_stats),
         std::move(comparison_sampling_counts), std::move(comparison_frame_stats),
-        std::move(sfid_to_comparison_result));
+        std::move(sfid_to_corrected_comparison_result));
   }
 
  private:
@@ -105,7 +117,8 @@ class BaselineAndComparisonTmpl {
 };
 
 using BaselineAndComparison =
-    BaselineAndComparisonTmpl<MizarPairedData, ActiveFunctionTimePerFrameComparator>;
+    BaselineAndComparisonTmpl<MizarPairedData, ActiveFunctionTimePerFrameComparator,
+                              orbit_statistics::BonferroniCorrection<SFID>>;
 
 BaselineAndComparison CreateBaselineAndComparison(std::unique_ptr<MizarDataProvider> baseline,
                                                   std::unique_ptr<MizarDataProvider> comparison);

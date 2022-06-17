@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
         report.GetSamplingCounts<orbit_mizar_data::Baseline>()->GetExclusiveCount(sfid);
     const uint64_t comparison_cnt =
         report.GetSamplingCounts<orbit_mizar_data::Comparison>()->GetExclusiveCount(sfid);
-    const double pvalue = report.GetComparisonResult(sfid).pvalue;
+    const double pvalue = report.GetComparisonResult(sfid).corrected_pvalue;
     if (pvalue < 0.05) {
       ORBIT_LOG("%s %.2f %s %u %u", name, pvalue, static_cast<std::string>(sfid), baseline_cnt,
                 comparison_cnt);
