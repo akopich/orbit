@@ -5,6 +5,10 @@
 #ifndef MIZAR_WIDGETS_SAMPLING_WITH_FRAME_TRACK_WIDGET_H_
 #define MIZAR_WIDGETS_SAMPLING_WITH_FRAME_TRACK_WIDGET_H_
 
+#include <qcheckbox.h>
+#include <qpushbutton.h>
+#include <qwidget.h>
+
 #include <QMessageBox>
 #include <QObject>
 #include <QStringLiteral>
@@ -23,9 +27,10 @@ class SamplingWithFrameTrackWidget;
 
 namespace orbit_mizar_widgets {
 
-class SamplingWithFrameTrackWidget : public QWidget {
+class SamplingWithFrameTrackWidgetBase : public QWidget {
   Q_OBJECT
 
+ protected:
   template <typename T>
   using Baseline = ::orbit_mizar_base::Baseline<T>;
 
@@ -33,35 +38,83 @@ class SamplingWithFrameTrackWidget : public QWidget {
   using Comparison = ::orbit_mizar_base::Comparison<T>;
 
  public:
-  explicit SamplingWithFrameTrackWidget(QWidget* parent = nullptr);
-  ~SamplingWithFrameTrackWidget() override;
-
-  void Init(const orbit_mizar_data::BaselineAndComparison* baseline_and_comparison);
+  explicit SamplingWithFrameTrackWidgetBase(QWidget* parent = nullptr);
+  ~SamplingWithFrameTrackWidgetBase() override;
 
  public slots:
-  void OnMultiplicityCorrectionCheckBoxClicked(int state);
-  void OnUpdateButtonClicked();
-
- private:
-  [[nodiscard]] Baseline<SamplingWithFrameTrackInputWidget*> GetBaselineInput() const;
-  [[nodiscard]] Comparison<SamplingWithFrameTrackInputWidget*> GetComparisonInput() const;
-  [[nodiscard]] bool IsMultiplicityCorrectionEnabled() const;
+  virtual void OnMultiplicityCorrectionCheckBoxClicked(int state) = 0;
+  virtual void OnUpdateButtonClicked() = 0;
   void OnSignificanceLevelSelected(int index);
 
-  [[nodiscard]] bool EmitWarningIfNeeded(
-      const Baseline<ErrorMessageOr<void>>& baseline_validation_result,
-      const Comparison<ErrorMessageOr<void>>& comparison_validation_result);
+ private:
+  [[nodiscard]] bool IsMultiplicityCorrectionEnabled() const;
 
-  bool EmitOneWarningIfNeeded(const ErrorMessageOr<void>& validation_result, const QString& title) {
-    if (validation_result.has_error()) {
-      QMessageBox::critical(
-          this, "Invalid input",
-          title + ": " + QString::fromStdString(validation_result.error().message()));
-      return false;
-    }
-    return true;
+ protected:
+  bool is_multiplicity_correction_enabled_ = true;
+  double significance_level_ = kDefaultSignificanceLevel;
+
+  static constexpr inline double kDefaultSignificanceLevel = 0.05;
+  static constexpr inline double kAlternativeSignificanceLevel = 0.01;
+
+  static const inline Baseline<QString> kBaselineTitle =
+      Baseline<QString>(QStringLiteral("Baseline"));
+  static const inline Comparison<QString> kComparisonTitle =
+      Comparison<QString>(QStringLiteral("Comparison"));
+  static const inline QString kMultiplicityCorrectionEnabledLabel =
+      QStringLiteral("Probability of false-alarm for at least one function:");
+  static const inline QString kMultiplicityCorrectionDisabledLabel =
+      QStringLiteral("Probability of false-alarm for an individual function:");
+};
+
+template <typename Ui, typename BaselineAndComparison, typename PairedData, auto ErrorReporter>
+class SamplingWithFrameTrackWidgetTmpl : public SamplingWithFrameTrackWidgetBase {
+ public:
+  explicit SamplingWithFrameTrackWidgetTmpl(QWidget* parent = nullptr)
+      : SamplingWithFrameTrackWidgetBase(parent), ui_(std::make_unique<Ui>()) {
+    ui_->setupUi(this);
+
+    OnMultiplicityCorrectionCheckBoxClicked(Qt::CheckState::Checked);
+
+    QObject::connect(ui_->multiplicity_correction_, &QCheckBox::stateChanged, this,
+                     &SamplingWithFrameTrackWidgetBase::OnMultiplicityCorrectionCheckBoxClicked);
+    QObject::connect(ui_->significance_level_, qOverload<int>(&QComboBox::currentIndexChanged),
+                     this, &SamplingWithFrameTrackWidgetBase::OnSignificanceLevelSelected);
+    QObject::connect(ui_->update_button_, &QPushButton::clicked, this,
+                     &SamplingWithFrameTrackWidgetBase::OnUpdateButtonClicked);
+  }
+  ~SamplingWithFrameTrackWidgetTmpl() override = default;
+
+  void Init(const orbit_mizar_data::BaselineAndComparison* baseline_and_comparison) {
+    LiftAndApply(&SamplingWithFrameTrackInputWidget::Init, GetBaselineInput(),
+                 baseline_and_comparison->GetBaselineData(), kBaselineTitle);
+    LiftAndApply(&SamplingWithFrameTrackInputWidget::Init, GetComparisonInput(),
+                 baseline_and_comparison->GetComparisonData(), kComparisonTitle);
+    baseline_and_comparison_ = baseline_and_comparison;
   }
 
+ protected:
+  void OnMultiplicityCorrectionCheckBoxClicked(int state) override {
+    is_multiplicity_correction_enabled_ = (state == Qt::CheckState::Checked);
+
+    const QString text = is_multiplicity_correction_enabled_ ? kMultiplicityCorrectionEnabledLabel
+                                                             : kMultiplicityCorrectionDisabledLabel;
+    ui_->significance_level_label_->setText(text);
+  }
+
+  void OnUpdateButtonClicked() override {
+    Baseline<orbit_mizar_data::HalfOfSamplingWithFrameTrackReportConfig> baseline_config =
+        LiftAndApply(&SamplingWithFrameTrackInputWidget::MakeConfig, GetBaselineInput());
+
+    Comparison<orbit_mizar_data::HalfOfSamplingWithFrameTrackReportConfig> comparison_config =
+        LiftAndApply(&SamplingWithFrameTrackInputWidget::MakeConfig, GetComparisonInput());
+
+    std::ignore = EmitWarningIfNeeded(
+        LiftAndApply(&ValidateConfig, baseline_config, baseline_and_comparison_->GetBaselineData()),
+        LiftAndApply(&ValidateConfig, comparison_config,
+                     baseline_and_comparison_->GetComparisonData()));
+  }
+
+ private:
   static ErrorMessageOr<void> ValidateConfig(
       const orbit_mizar_data::HalfOfSamplingWithFrameTrackReportConfig& config,
       const orbit_mizar_data::MizarPairedData& data) {
@@ -74,22 +127,47 @@ class SamplingWithFrameTrackWidget : public QWidget {
     return outcome::success();
   }
 
-  const orbit_mizar_data::BaselineAndComparison* baseline_and_comparison_;
-  bool is_multiplicity_correction_enabled_ = true;
-  double significance_level_ = kDefaultSignificanceLevel;
-  std::unique_ptr<Ui::SamplingWithFrameTrackWidget> ui_;
+  [[nodiscard]] bool EmitWarningIfNeeded(
+      const Baseline<ErrorMessageOr<void>>& baseline_validation_result,
+      const Comparison<ErrorMessageOr<void>>& comparison_validation_result) {
+    Baseline<bool> baseline_ok =
+        LiftAndApply(&SamplingWithFrameTrackWidgetTmpl::EmitOneWarningIfNeeded,
+                     Baseline<SamplingWithFrameTrackWidgetTmpl*>(this), baseline_validation_result,
+                     kBaselineTitle);
 
-  static constexpr inline double kDefaultSignificanceLevel = 0.05;
-  static constexpr inline double kAlternativeSignificanceLevel = 0.01;
-  static const inline Baseline<QString> kBaselineTitle =
-      Baseline<QString>(QStringLiteral("Baseline"));
-  static const inline Comparison<QString> kComparisonTitle =
-      Comparison<QString>(QStringLiteral("Comparison"));
-  static const inline QString kMultiplicityCorrectionEnabledLabel =
-      QStringLiteral("Probability of false-alarm for at least one function:");
-  static const inline QString kMultiplicityCorrectionDisabledLabel =
-      QStringLiteral("Probability of false-alarm for an individual function:");
+    Comparison<bool> comparison_ok =
+        LiftAndApply(&SamplingWithFrameTrackWidgetTmpl::EmitOneWarningIfNeeded,
+                     Comparison<SamplingWithFrameTrackWidgetTmpl*>(this),
+                     comparison_validation_result, kComparisonTitle);
+
+    return *baseline_ok && *comparison_ok;
+  }
+
+  bool EmitOneWarningIfNeeded(const ErrorMessageOr<void>& validation_result, const QString& title) {
+    if (validation_result.has_error()) {
+      ErrorReporter(title + ": " + QString::fromStdString(validation_result.error().message()));
+      return false;
+    }
+    return true;
+  }
+
+  [[nodiscard]] Baseline<SamplingWithFrameTrackInputWidget*> GetBaselineInput() const {
+    return Baseline<SamplingWithFrameTrackInputWidget*>(ui_->baseline_input_);
+  }
+
+  [[nodiscard]] Comparison<SamplingWithFrameTrackInputWidget*> GetComparisonInput() const {
+    return Comparison<SamplingWithFrameTrackInputWidget*>(ui_->comparison_input_);
+  }
+
+  const BaselineAndComparison* baseline_and_comparison_;
+  std::unique_ptr<Ui> ui_;
 };
+
+inline void QtErrorReporter(QWidget* parent, const QString& message) {
+  QMessageBox::critical(parent, "Invalid input", message);
+}
+
+class SamplingWithFrameTrackWidget;
 
 }  // namespace orbit_mizar_widgets
 
