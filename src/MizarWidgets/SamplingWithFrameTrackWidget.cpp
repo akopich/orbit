@@ -4,12 +4,16 @@
 
 #include "MizarWidgets/SamplingWithFrameTrackWidget.h"
 
+#include <qobject.h>
+
 #include <QObject>
 #include <QWidget>
 #include <Qt>
 #include <memory>
 
+#include "MizarBase/BaselineOrComparison.h"
 #include "MizarData/BaselineAndComparison.h"
+#include "MizarData/SamplingWithFrameTrackComparisonReport.h"
 #include "OrbitBase/Typedef.h"
 #include "ui_SamplingWithFrameTrackWidget.h"
 
@@ -29,6 +33,8 @@ SamplingWithFrameTrackWidget::SamplingWithFrameTrackWidget(QWidget* parent)
                    &SamplingWithFrameTrackWidget::OnMultiplicityCorrectionCheckBoxClicked);
   QObject::connect(ui_->significance_level_, qOverload<int>(&QComboBox::currentIndexChanged), this,
                    &SamplingWithFrameTrackWidget::OnSignificanceLevelSelected);
+  QObject::connect(ui_->update_button_, &QPushButton::clicked, this,
+                   &SamplingWithFrameTrackWidget::OnUpdateButtonClicked);
 }
 
 void SamplingWithFrameTrackWidget::Init(
@@ -37,6 +43,7 @@ void SamplingWithFrameTrackWidget::Init(
                baseline_and_comparison->GetBaselineData(), kBaselineTitle);
   LiftAndApply(&SamplingWithFrameTrackInputWidget::Init, GetComparisonInput(),
                baseline_and_comparison->GetComparisonData(), kComparisonTitle);
+  baseline_and_comparison_ = baseline_and_comparison;
 }
 
 SamplingWithFrameTrackWidget::~SamplingWithFrameTrackWidget() = default;
@@ -63,6 +70,31 @@ void SamplingWithFrameTrackWidget::OnMultiplicityCorrectionCheckBoxClicked(int s
   const QString text = is_multiplicity_correction_enabled_ ? kMultiplicityCorrectionEnabledLabel
                                                            : kMultiplicityCorrectionDisabledLabel;
   ui_->significance_level_label_->setText(text);
+}
+
+void SamplingWithFrameTrackWidget::OnUpdateButtonClicked() {
+  Baseline<orbit_mizar_data::HalfOfSamplingWithFrameTrackReportConfig> baseline_config =
+      LiftAndApply(&SamplingWithFrameTrackInputWidget::MakeConfig, GetBaselineInput());
+
+  Comparison<orbit_mizar_data::HalfOfSamplingWithFrameTrackReportConfig> comparison_config =
+      LiftAndApply(&SamplingWithFrameTrackInputWidget::MakeConfig, GetComparisonInput());
+
+  EmitWarningIfNeeded(
+      LiftAndApply(&ValidateConfig, baseline_config, baseline_and_comparison_->GetBaselineData()),
+      LiftAndApply(&ValidateConfig, comparison_config,
+                   baseline_and_comparison_->GetComparisonData()));
+}
+
+void SamplingWithFrameTrackWidget::EmitWarningIfNeeded(
+    const Baseline<ErrorMessageOr<void>>& baseline_validation_result,
+    const Comparison<ErrorMessageOr<void>>& comparison_validation_result) {
+  LiftAndApply(&SamplingWithFrameTrackWidget::EmitOneWarningIfNeeded,
+               Baseline<SamplingWithFrameTrackWidget*>(this), baseline_validation_result,
+               kBaselineTitle);
+
+  LiftAndApply(&SamplingWithFrameTrackWidget::EmitOneWarningIfNeeded,
+               Comparison<SamplingWithFrameTrackWidget*>(this), comparison_validation_result,
+               kComparisonTitle);
 }
 
 }  // namespace orbit_mizar_widgets
