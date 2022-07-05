@@ -48,15 +48,18 @@ class SamplingWithFrameTrackWidget : public QWidget {
   [[nodiscard]] bool IsMultiplicityCorrectionEnabled() const;
   void OnSignificanceLevelSelected(int index);
 
-  void EmitWarningIfNeeded(const Baseline<ErrorMessageOr<void>>& baseline_validation_result,
-                           const Comparison<ErrorMessageOr<void>>& comparison_validation_result);
+  [[nodiscard]] bool EmitWarningIfNeeded(
+      const Baseline<ErrorMessageOr<void>>& baseline_validation_result,
+      const Comparison<ErrorMessageOr<void>>& comparison_validation_result);
 
-  void EmitOneWarningIfNeeded(const ErrorMessageOr<void>& validation_result, const QString& title) {
+  bool EmitOneWarningIfNeeded(const ErrorMessageOr<void>& validation_result, const QString& title) {
     if (validation_result.has_error()) {
       QMessageBox::critical(
           this, "Invalid input",
           title + ": " + QString::fromStdString(validation_result.error().message()));
+      return false;
     }
+    return true;
   }
 
   static ErrorMessageOr<void> ValidateConfig(

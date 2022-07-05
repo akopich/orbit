@@ -4,8 +4,6 @@
 
 #include "MizarWidgets/SamplingWithFrameTrackWidget.h"
 
-#include <qobject.h>
-
 #include <QObject>
 #include <QWidget>
 #include <Qt>
@@ -79,22 +77,25 @@ void SamplingWithFrameTrackWidget::OnUpdateButtonClicked() {
   Comparison<orbit_mizar_data::HalfOfSamplingWithFrameTrackReportConfig> comparison_config =
       LiftAndApply(&SamplingWithFrameTrackInputWidget::MakeConfig, GetComparisonInput());
 
-  EmitWarningIfNeeded(
+  std::ignore = EmitWarningIfNeeded(
       LiftAndApply(&ValidateConfig, baseline_config, baseline_and_comparison_->GetBaselineData()),
       LiftAndApply(&ValidateConfig, comparison_config,
                    baseline_and_comparison_->GetComparisonData()));
 }
 
-void SamplingWithFrameTrackWidget::EmitWarningIfNeeded(
+bool SamplingWithFrameTrackWidget::EmitWarningIfNeeded(
     const Baseline<ErrorMessageOr<void>>& baseline_validation_result,
     const Comparison<ErrorMessageOr<void>>& comparison_validation_result) {
-  LiftAndApply(&SamplingWithFrameTrackWidget::EmitOneWarningIfNeeded,
-               Baseline<SamplingWithFrameTrackWidget*>(this), baseline_validation_result,
-               kBaselineTitle);
+  Baseline<bool> baseline_ok = LiftAndApply(&SamplingWithFrameTrackWidget::EmitOneWarningIfNeeded,
+                                            Baseline<SamplingWithFrameTrackWidget*>(this),
+                                            baseline_validation_result, kBaselineTitle);
 
-  LiftAndApply(&SamplingWithFrameTrackWidget::EmitOneWarningIfNeeded,
-               Comparison<SamplingWithFrameTrackWidget*>(this), comparison_validation_result,
-               kComparisonTitle);
+  Comparison<bool> comparison_ok =
+      LiftAndApply(&SamplingWithFrameTrackWidget::EmitOneWarningIfNeeded,
+                   Comparison<SamplingWithFrameTrackWidget*>(this), comparison_validation_result,
+                   kComparisonTitle);
+
+  return *baseline_ok && *comparison_ok;
 }
 
 }  // namespace orbit_mizar_widgets
