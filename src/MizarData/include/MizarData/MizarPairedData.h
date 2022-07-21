@@ -15,6 +15,7 @@
 #include <memory>
 #include <numeric>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "ClientData/CallstackData.h"
@@ -22,8 +23,10 @@
 #include "ClientData/ScopeId.h"
 #include "ClientData/ScopeInfo.h"
 #include "ClientProtos/capture_data.pb.h"
+#include "GrpcProtos/capture.pb.h"
 #include "MizarBase/SampledFunctionId.h"
 #include "MizarBase/ThreadId.h"
+#include "MizarData/FrameTrack.h"
 #include "MizarData/MizarDataProvider.h"
 #include "MizarData/NonWrappingAddition.h"
 #include "OrbitBase/ThreadConstants.h"
@@ -52,24 +55,23 @@ class MizarPairedDataTmpl {
   // obtained via counting how many callstack samples have been obtained during each frame and then
   // multiplying the counter by the sampling period.
   [[nodiscard]] std::vector<uint64_t> ActiveInvocationTimes(
-      const absl::flat_hash_set<TID>& tids, ScopeId frame_track_scope_id,
+      const absl::flat_hash_set<TID>& tids, FrameTrackId frame_track_id,
       uint64_t min_relative_timestamp_ns, uint64_t max_relative_timestamp_ns) const {
     const auto [min_timestamp_ns, max_timestamp_ns] =
         RelativeToAbsoluteTimestampRange(min_relative_timestamp_ns, max_relative_timestamp_ns);
-    const std::vector<const orbit_client_protos::TimerInfo*> timers =
-        GetCaptureData().GetTimersForScope(frame_track_scope_id, min_timestamp_ns,
-                                           max_timestamp_ns);
-    if (timers.size() < 2) return {};
+    const std::vector<FrameStartNs> frame_starts =
+        GetFrames(frame_track_id, min_timestamp_ns, max_timestamp_ns);
+    if (frame_starts.size() < 2) return {};
 
     // TODO(b/235572160) Estimate the actual sampling period and use it instead
     const uint64_t sampling_period = data_->GetNominalSamplingPeriodNs();
 
     std::vector<uint64_t> result;
-    for (size_t i = 0; i + 1 < timers.size(); ++i) {
+    for (size_t i = 0; i + 1 < frame_starts.size(); ++i) {
       const uint64_t callstack_count = std::transform_reduce(
           std::begin(tids), std::end(tids), uint64_t{0}, std::plus<>(),
-          [this, i, &timers](const TID tid) {
-            return CallstackSamplesCount(tid, timers[i]->start(), timers[i + 1]->start());
+          [this, i, &frame_starts](const TID tid) {
+            return CallstackSamplesCount(tid, *frame_starts[i], *frame_starts[i + 1]);
           });
 
       result.push_back(sampling_period * callstack_count);
@@ -85,15 +87,19 @@ class MizarPairedDataTmpl {
     return tid_to_callstack_samples_counts_;
   }
 
-  [[nodiscard]] absl::flat_hash_map<ScopeId, orbit_client_data::ScopeInfo> GetFrameTracks() const {
+  [[nodiscard]] absl::flat_hash_map<FrameTrackId, FrameTrackInfo> GetFrameTracks() const {
     const std::vector<ScopeId> scope_ids = GetCaptureData().GetAllProvidedScopeIds();
-    absl::flat_hash_map<ScopeId, orbit_client_data::ScopeInfo> result;
+    absl::flat_hash_map<FrameTrackId, FrameTrackInfo> result;
     for (const ScopeId scope_id : scope_ids) {
       const orbit_client_data::ScopeInfo scope_info = GetCaptureData().GetScopeInfo(scope_id);
       if (scope_info.GetType() == orbit_client_data::ScopeType::kDynamicallyInstrumentedFunction ||
           scope_info.GetType() == orbit_client_data::ScopeType::kApiScope) {
-        result.try_emplace(scope_id, scope_info);
+        result.try_emplace(MakeFrameTrackId(scope_id), scope_info);
       }
+    }
+
+    for (auto& [source, unused_events] : data_->source_to_present_events()) {
+      result.try_emplace(MakeFrameTrackId(source), source);
     }
     return result;
   }
@@ -188,6 +194,66 @@ class MizarPairedDataTmpl {
 
   [[nodiscard]] const orbit_client_data::CallstackData& GetCallstackData() const {
     return GetCaptureData().GetCallstackData();
+  }
+
+  [[nodiscard]] std::vector<FrameStartNs> GetFrames(FrameTrackId id, uint64_t min_timestamp_ns,
+                                                    uint64_t max_timestamp_ns) const {
+    return IsEtw(id) ? GetEtwFrames(EtwSource(id), min_timestamp_ns, max_timestamp_ns)
+                     : GetDorMSFrames(GetScopeId(id), min_timestamp_ns, max_timestamp_ns);
+  }
+
+  [[nodiscard]] std::vector<FrameStartNs> GetDorMSFrames(ScopeId scope_id,
+                                                         uint64_t min_timestamp_ns,
+                                                         uint64_t max_timestamp_ns) const {
+    const std::vector<const TimerInfo*> timers =
+        GetCaptureData().GetTimersForScope(scope_id, min_timestamp_ns, max_timestamp_ns);
+    std::vector<FrameStartNs> result;
+
+    std::transform(std::begin(timers), std::end(timers), std::back_inserter(result),
+                   [](const TimerInfo* timer) { return FrameStartNs(timer->start()); });
+    return result;
+  }
+
+  [[nodiscard]] std::vector<FrameStartNs> GetEtwFrames(
+      orbit_grpc_protos::PresentEvent::Source etw_source, uint64_t min_timestamp_ns,
+      uint64_t max_timestamp_ns) const {
+    const auto& source_to_present_events = data_->source_to_present_events();
+
+    if (auto it = source_to_present_events.find(etw_source); it != source_to_present_events.end()) {
+      std::vector<FrameStartNs> result;
+      const std::vector<orbit_grpc_protos::PresentEvent>& events = it->second;
+      for (const orbit_grpc_protos::PresentEvent& event : events) {
+        if (min_timestamp_ns < event.begin_timestamp_ns() &&
+            event.begin_timestamp_ns() < max_timestamp_ns) {
+          result.emplace_back(event.begin_timestamp_ns());
+        }
+      }
+      return result;
+    }
+    return {};
+  }
+
+  static constexpr uint64_t kNumberOfEtwSources = 20;  // an upper bound
+
+  [[nodiscard]] static bool IsEtw(FrameTrackId id) { return *id < kNumberOfEtwSources; }
+
+  [[nodiscard]] static orbit_grpc_protos::PresentEvent::Source EtwSource(FrameTrackId id) {
+    return static_cast<orbit_grpc_protos::PresentEvent::Source>(*id);
+  }
+
+  [[nodiscard]] static FrameTrackId MakeFrameTrackId(
+      orbit_grpc_protos::PresentEvent::Source source) {
+    return FrameTrackId(static_cast<int>(source));
+  }
+
+  [[nodiscard]] static FrameTrackId MakeFrameTrackId(ScopeId scope_id) {
+    return FrameTrackId(kNumberOfEtwSources + *scope_id);
+  }
+
+  [[nodiscard]] static ScopeId GetScopeId(FrameTrackId id) {
+    const uint64_t value = -kNumberOfEtwSources + *id;
+    ORBIT_CHECK(value > 0);
+    return ScopeId(value);
   }
 
   std::unique_ptr<Data> data_;

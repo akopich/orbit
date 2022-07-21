@@ -22,10 +22,12 @@
 #include <string_view>
 #include <vector>
 
-#include "ClientData/ScopeId.h"
 #include "ClientData/ScopeInfo.h"
+#include "GrpcProtos/capture.pb.h"
+#include "MizarData/FrameTrack.h"
 #include "MizarData/MizarPairedData.h"
 #include "MizarData/SamplingWithFrameTrackComparisonReport.h"
+#include "OrbitBase/Logging.h"
 #include "OrbitBase/Sort.h"
 
 namespace Ui {
@@ -33,14 +35,14 @@ class SamplingWithFrameTrackInputWidget;
 }
 
 Q_DECLARE_METATYPE(::orbit_mizar_base::TID);
-Q_DECLARE_METATYPE(::orbit_client_data::ScopeId);
+Q_DECLARE_METATYPE(::orbit_mizar_data::FrameTrackId);
 
 namespace orbit_mizar_widgets {
 
 class SamplingWithFrameTrackInputWidgetBase : public QWidget {
   Q_OBJECT
   using TID = ::orbit_mizar_base::TID;
-  using ScopeId = ::orbit_client_data::ScopeId;
+  using FrameTrackId = ::orbit_mizar_data::FrameTrackId;
 
  public:
   ~SamplingWithFrameTrackInputWidgetBase() override;
@@ -56,7 +58,7 @@ class SamplingWithFrameTrackInputWidgetBase : public QWidget {
   std::unique_ptr<Ui::SamplingWithFrameTrackInputWidget> ui_;
 
  protected:
-  enum UserRoles { kTidRole = Qt::UserRole + 1, kScopeIdRole };
+  enum UserRoles { kTidRole = Qt::UserRole + 1, kFrameTrackIdRole };
 
   explicit SamplingWithFrameTrackInputWidgetBase(QWidget* parent = nullptr);
 
@@ -67,7 +69,7 @@ class SamplingWithFrameTrackInputWidgetBase : public QWidget {
 
  private:
   absl::flat_hash_set<TID> selected_tids_;
-  ScopeId frame_track_scope_id_{0};
+  FrameTrackId frame_track_id_{0};
 
   // std::numeric_limits<uint64_t>::max() corresponds to malformed input
   uint64_t start_relative_time_ns_ = 0;
@@ -76,7 +78,10 @@ class SamplingWithFrameTrackInputWidgetBase : public QWidget {
 template <typename PairedData>
 class SamplingWithFrameTrackInputWidgetTmpl : public SamplingWithFrameTrackInputWidgetBase {
   using TID = ::orbit_mizar_base::TID;
-  using ScopeId = ::orbit_client_data::ScopeId;
+  using FrameTrackId = ::orbit_mizar_data::FrameTrackId;
+  using FrameTrackInfo = ::orbit_mizar_data::FrameTrackInfo;
+  using PresentEvent = ::orbit_grpc_protos::PresentEvent;
+  using ScopeInfo = ::orbit_client_data::ScopeInfo;
 
  public:
   SamplingWithFrameTrackInputWidgetTmpl() = delete;
@@ -113,18 +118,37 @@ class SamplingWithFrameTrackInputWidgetTmpl : public SamplingWithFrameTrackInput
     }
   }
 
-  void InitFrameTrackList(const PairedData& data) {
-    const absl::flat_hash_map<ScopeId, orbit_client_data::ScopeInfo> scope_id_to_info =
-        data.GetFrameTracks();
-    std::vector<std::pair<ScopeId, orbit_client_data::ScopeInfo>> scope_id_to_info_sorted(
-        std::begin(scope_id_to_info), std::end(scope_id_to_info));
-    orbit_base::sort(std::begin(scope_id_to_info_sorted), std::end(scope_id_to_info_sorted),
-                     [](const auto& a) { return a.second.GetName(); });
+  static std::string PresentEventSourceName(PresentEvent::Source source) {
+    switch (source) {
+      case PresentEvent::kD3d9:
+        return "D3d9";
+      case PresentEvent::kDxgi:
+        return "Dxgi";
+      default:
+        ORBIT_UNREACHABLE();
+    }
+  }
 
-    for (size_t i = 0; i < scope_id_to_info_sorted.size(); ++i) {
-      const auto& [scope_id, scope_info] = scope_id_to_info_sorted[i];
-      GetFrameTrackList()->insertItem(i, MakeFrameTrackString(scope_info));
-      GetFrameTrackList()->setItemData(i, QVariant::fromValue(scope_id), kScopeIdRole);
+  void InitFrameTrackList(const PairedData& data) {
+    absl::flat_hash_map<FrameTrackId, FrameTrackInfo> id_to_infos = data.GetFrameTracks();
+    std::vector<std::pair<FrameTrackId, std::string>> id_to_displayed_name;
+    std::transform(std::begin(id_to_infos), std::end(id_to_infos),
+                   std::back_inserter(id_to_displayed_name), [](const auto& id_to_info) {
+                     const auto [id, info] = id_to_info;
+                     const std::string displayed_name =
+                         (std::holds_alternative<ScopeInfo>(info))
+                             ? MakeFrameTrackString(std::get<ScopeInfo>(info))
+                             : PresentEventSourceName(std::get<PresentEvent::Source>(info));
+                     return std::make_pair(id, displayed_name);
+                   });
+
+    orbit_base::sort(std::begin(id_to_displayed_name), std::end(id_to_displayed_name),
+                     &std::pair<FrameTrackId, std::string>::second);
+
+    for (size_t i = 0; i < id_to_displayed_name.size(); ++i) {
+      const auto& [id, displayed_name] = id_to_displayed_name[i];
+      GetFrameTrackList()->insertItem(i, QString::fromStdString(displayed_name));
+      GetFrameTrackList()->setItemData(i, QVariant::fromValue(id), kFrameTrackIdRole);
     }
     OnFrameTrackSelectionChanged(0);
   }
@@ -134,13 +158,13 @@ class SamplingWithFrameTrackInputWidgetTmpl : public SamplingWithFrameTrackInput
     GetStartMs()->setText("0");
   }
 
-  [[nodiscard]] static QString MakeFrameTrackString(
+  [[nodiscard]] static std::string MakeFrameTrackString(
       const orbit_client_data::ScopeInfo& scope_info) {
     const std::string_view type_string =
         scope_info.GetType() == orbit_client_data::ScopeType::kDynamicallyInstrumentedFunction
             ? " D"
             : "MS";
-    return QString::fromStdString(absl::StrFormat("[%s] %s", type_string, scope_info.GetName()));
+    return absl::StrFormat("[%s] %s", type_string, scope_info.GetName());
   }
 };
 
