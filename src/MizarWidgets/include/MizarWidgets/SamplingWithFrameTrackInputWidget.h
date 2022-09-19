@@ -17,6 +17,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QObject>
+#include <QRadioButton>
 #include <QWidget>
 #include <Qt>
 #include <chrono>
@@ -56,6 +57,11 @@ class SamplingWithFrameTrackInputWidgetBase : public QWidget {
 
   [[nodiscard]] orbit_mizar_data::HalfOfSamplingWithFrameTrackReportConfig MakeConfig() const;
 
+  void SetUseItsSymbols(bool use_its_symbols) { GetUseItsSymbols()->setChecked(use_its_symbols); }
+
+ signals:
+  void UseItsSymbolToggled(bool checked);
+
  public slots:
   void OnThreadSelectionChanged();
   void OnFrameTrackSelectionChanged(int index);
@@ -74,6 +80,7 @@ class SamplingWithFrameTrackInputWidgetBase : public QWidget {
   [[nodiscard]] QListWidget* GetThreadList() const;
   [[nodiscard]] QComboBox* GetFrameTrackList() const;
   [[nodiscard]] QLineEdit* GetStartMs() const;
+  [[nodiscard]] QRadioButton* GetUseItsSymbols() const;
 
   absl::flat_hash_set<TID> selected_tids_;
 
@@ -98,15 +105,21 @@ class SamplingWithFrameTrackInputWidgetTmpl : public SamplingWithFrameTrackInput
       : SamplingWithFrameTrackInputWidgetBase(parent) {}
   ~SamplingWithFrameTrackInputWidgetTmpl() override = default;
 
-  void Init(const PairedData& data, const QString& title, const QString& file_name) {
+  void Init(const PairedData& data, const QString& title, const QString& file_name,
+            bool use_its_symbols) {
     InitTitle(title);
     InitFileName(file_name);
     InitThreadList(data);
     InitFrameTrackList(data);
     InitStartMs();
+    InitUseItsSymbolsButton(use_its_symbols);
   }
 
  private:
+  void InitUseItsSymbolsButton(bool use_its_symbols) {
+    GetUseItsSymbols()->setChecked(use_its_symbols);
+  }
+
   void InitTitle(const QString& title) { GetTitle()->setText(title); }
 
   void InitFileName(const QString& file_name) { GetFileName()->setText(file_name); }

@@ -5,6 +5,7 @@
 #include "MizarWidgets/SamplingWithFrameTrackInputWidget.h"
 
 #include <absl/strings/str_format.h>
+#include <qradiobutton.h>
 
 #include <QComboBox>
 #include <QLineEdit>
@@ -35,6 +36,8 @@ SamplingWithFrameTrackInputWidgetBase::SamplingWithFrameTrackInputWidgetBase(QWi
                    &SamplingWithFrameTrackInputWidgetBase::OnFrameTrackSelectionChanged);
   QObject::connect(GetStartMs(), &QLineEdit::textChanged, this,
                    &SamplingWithFrameTrackInputWidgetBase::OnStartMsChanged);
+  QObject::connect(GetUseItsSymbols(), &QRadioButton::toggled, this,
+                   [this](bool checked) { emit UseItsSymbolToggled(checked); });
 }
 
 QLabel* SamplingWithFrameTrackInputWidgetBase::GetTitle() const { return ui_->title_; }
@@ -50,6 +53,10 @@ QComboBox* SamplingWithFrameTrackInputWidgetBase::GetFrameTrackList() const {
 }
 
 QLineEdit* SamplingWithFrameTrackInputWidgetBase::GetStartMs() const { return ui_->start_ms_; }
+
+QRadioButton* SamplingWithFrameTrackInputWidgetBase::GetUseItsSymbols() const {
+  return ui_->use_its_symbols_button_;
+}
 
 orbit_mizar_data::HalfOfSamplingWithFrameTrackReportConfig
 SamplingWithFrameTrackInputWidgetBase::MakeConfig() const {

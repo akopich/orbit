@@ -6,12 +6,15 @@
 #include <absl/strings/str_format.h>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include <qradiobutton.h>
 
 #include <QApplication>
 #include <QComboBox>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QObject>
+#include <QRadioButton>
+#include <QSignalSpy>
 #include <QStringLiteral>
 #include <QTest>
 #include <array>
@@ -104,7 +107,7 @@ class SamplingWithFrameTrackInputWidgetTest : public ::testing::Test {
     EXPECT_CALL(data_, TidToNames).WillRepeatedly(ReturnRef(kTidToName));
     EXPECT_CALL(data_, TidToCallstackSampleCounts).WillRepeatedly(ReturnRef(kTidToCount));
 
-    widget_->Init(data_, kInputName, kFileName);
+    widget_->Init(data_, kInputName, kFileName, /*use_its_symbols=*/true);
   }
 
   void SetUp() override {
@@ -122,6 +125,9 @@ class SamplingWithFrameTrackInputWidgetTest : public ::testing::Test {
 
     start_ms_ = widget_->findChild<QLineEdit*>("start_ms_");
     ASSERT_THAT(start_ms_, NotNull());
+
+    use_its_symbols_ = widget_->findChild<QRadioButton*>("use_its_symbols_button_");
+    ASSERT_THAT(use_its_symbols_, NotNull());
   }
 
   void SelectThreadListRow(int row) const {
@@ -151,6 +157,7 @@ class SamplingWithFrameTrackInputWidgetTest : public ::testing::Test {
   QListWidget* thread_list_{};
   QComboBox* frame_track_list_{};
   QLineEdit* start_ms_{};
+  QRadioButton* use_its_symbols_{};
 };
 
 TEST_F(SamplingWithFrameTrackInputWidgetTest, InitIsCorrect) {
@@ -214,6 +221,29 @@ TEST_F(SamplingWithFrameTrackInputWidgetTest, OnStartMsChangedIsCorrect) {
 
   start_ms_->setText("-0");
   ExpectRelativeStartNsIs(0);
+}
+
+TEST_F(SamplingWithFrameTrackInputWidgetTest, UseItsSymbolsButtonToggledSignalRelayed) {
+  QSignalSpy spy(use_its_symbols_, &QRadioButton::toggled);
+
+  auto set_clicked_and_check_signal = [&](bool checked) {
+    const bool signal_expected = checked != use_its_symbols_->isChecked();
+
+    widget_->SetUseItsSymbols(checked);
+
+    if (signal_expected) {
+      EXPECT_EQ(spy.count(), 1);
+      EXPECT_EQ(spy.takeFirst().constFirst().toBool(), checked);
+      spy.clear();
+    }
+  };
+
+  set_clicked_and_check_signal(false);
+  set_clicked_and_check_signal(false);
+  set_clicked_and_check_signal(true);
+  set_clicked_and_check_signal(false);
+  set_clicked_and_check_signal(true);
+  set_clicked_and_check_signal(true);
 }
 
 }  // namespace orbit_mizar_widgets

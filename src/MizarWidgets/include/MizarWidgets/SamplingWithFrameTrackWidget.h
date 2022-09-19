@@ -65,6 +65,10 @@ class SamplingWithFrameTrackWidget : public QWidget {
 
   static constexpr inline double kDefaultSignificanceLevel = 0.05;
   static constexpr inline double kAlternativeSignificanceLevel = 0.01;
+  static constexpr inline Baseline<bool> kUseBaselineSymbols =
+      orbit_mizar_base::MakeBaseline<bool>(true);
+  static constexpr inline Comparison<bool> kUseComparisonSymbols =
+      orbit_mizar_base::MakeComparison<bool>(false);
 
   static const inline QString kMultiplicityCorrectionEnabledLabel =
       QStringLiteral("Probability of false alarm for at least one function:");

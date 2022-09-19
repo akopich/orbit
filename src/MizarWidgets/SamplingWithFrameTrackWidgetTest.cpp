@@ -52,6 +52,8 @@ class SamplingWithFrameTrackWidgetTest : public ::testing::Test {
 
   QCheckBox* multiplicity_correction_{};
   QLabel* significance_level_label_{};
+  SamplingWithFrameTrackInputWidget* baseline_input;
+  SamplingWithFrameTrackInputWidget* comparison_input;
   std::unique_ptr<SamplingWithFrameTrackWidget> widget_;
 };
 

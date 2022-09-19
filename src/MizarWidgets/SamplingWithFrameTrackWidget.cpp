@@ -12,6 +12,7 @@
 #include "MizarBase/Titles.h"
 #include "MizarData/BaselineAndComparison.h"
 #include "MizarData/SamplingWithFrameTrackComparisonReport.h"
+#include "MizarModels/SamplingWithFrameTrackReportModel.h"
 #include "MizarWidgets/SamplingWithFrameTrackReportConfigValidator.h"
 #include "OrbitBase/Result.h"
 #include "OrbitBase/Typedef.h"
@@ -25,6 +26,7 @@ using ::orbit_mizar_base::Comparison;
 using Report = ::orbit_mizar_data::SamplingWithFrameTrackComparisonReport;
 using ::orbit_mizar_base::kBaselineTitle;
 using ::orbit_mizar_base::kComparisonTitle;
+using FunctionNameToShow = SamplingWithFrameTrackReportModel::FunctionNameToShow;
 
 SamplingWithFrameTrackWidget::SamplingWithFrameTrackWidget(QWidget* parent)
     : QWidget(parent), ui_(std::make_unique<Ui::SamplingWithFrameTrackWidget>()) {
@@ -46,6 +48,22 @@ SamplingWithFrameTrackWidget::SamplingWithFrameTrackWidget(QWidget* parent)
   ui_->output_->OnSignificanceLevelChanged(kDefaultSignificanceLevel);
 }
 
+template <typename SendingInput, typename AnotherInput>
+static void ConnectUseItsSymbolToggled(const SendingInput& sender,
+                                       const AnotherInput& another_input,
+                                       bool is_comparison_sending,
+                                       SamplingWithFrameTrackWidget* receiver,
+                                       SamplingWithFrameTrackOutputWidget* output) {
+  QObject::connect(*sender, &SamplingWithFrameTrackInputWidget::UseItsSymbolToggled, receiver,
+                   [=](bool checked) {
+                     output->SetFunctionNameToShow((checked != is_comparison_sending)
+                                                       ? FunctionNameToShow::kBaseline
+                                                       : FunctionNameToShow::kComparison);
+                     (*another_input)->SetUseItsSymbols(!checked);
+                   });
+}
+
+// TODO(b/247556539) Add a unit-test
 void SamplingWithFrameTrackWidget::Init(
     const orbit_mizar_data::BaselineAndComparison* baseline_and_comparison,
     const Baseline<QString>& baseline_file_name, const Comparison<QString>& comparison_file_name) {
@@ -60,10 +78,14 @@ void SamplingWithFrameTrackWidget::Init(
 
   LiftAndApply(&SamplingWithFrameTrackInputWidget::Init, GetBaselineInput(),
                baseline_and_comparison->GetBaselineData(), orbit_mizar_base::QBaselineTitle(),
-               baseline_file_name);
+               baseline_file_name, kUseBaselineSymbols);
   LiftAndApply(&SamplingWithFrameTrackInputWidget::Init, GetComparisonInput(),
                baseline_and_comparison->GetComparisonData(), orbit_mizar_base::QComparisonTitle(),
-               comparison_file_name);
+               comparison_file_name, kUseComparisonSymbols);
+
+  ConnectUseItsSymbolToggled(GetBaselineInput(), GetComparisonInput(), false, this, ui_->output_);
+  ConnectUseItsSymbolToggled(GetComparisonInput(), GetBaselineInput(), true, this, ui_->output_);
+
   baseline_and_comparison_ = baseline_and_comparison;
 }
 

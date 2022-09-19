@@ -36,6 +36,13 @@
       </widget>
      </item>
      <item>
+      <widget class="QRadioButton" name="use_its_symbols_">
+       <property name="text">
+        <string>Use its symbols</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QLabel" name="file_name_">
        <property name="text">
         <string>NOFILENAME</string>
