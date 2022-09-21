@@ -13,7 +13,7 @@
 #include <tuple>
 #include <utility>
 
-#include "FunctionSymbolToKeyExactNameMatch.h"
+#include "DummyFunctionSymbolToKey.h"
 #include "MizarBase/AbsoluteAddress.h"
 #include "MizarBase/BaselineOrComparison.h"
 #include "MizarBase/FunctionSymbols.h"
@@ -116,8 +116,7 @@ class BaselineAndComparisonHelperTmpl {
 };
 
 // The instantiation used in production
-using BaselineAndComparisonHelper =
-    BaselineAndComparisonHelperTmpl<FunctionSymbolToKeyExactNameMatch>;
+using BaselineAndComparisonHelper = BaselineAndComparisonHelperTmpl<D3D11DummyFunctionSymbolToKey>;
 
 }  // namespace orbit_mizar_data
 
